@@ -1,0 +1,279 @@
+<!--
+Place this file (index.html) into a GitHub Pages repository (root of gh-pages branch or main for user.github.io).
+Create a separate file named config.json in the same repo with the following structure (example):
+{
+  "bot_token": "123456:ABC-DEF...",
+  "chat_id": "-1001234567890"
+}
+
+Security note: GitHub Pages is public. Keep the repository private if you don't want the bot token exposed. A better production approach is to proxy submissions through a small server.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>English Quiz — Pre‑Intermediate</title>
+  <style>
+    :root{--bg:#0f1724;--card:#111827;--muted:#9ca3af;--accent:#60a5fa;--success:#10b981;--danger:#ef4444}
+    *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{margin:0;background:linear-gradient(180deg,#071029 0%,#07112a 100%);color:#e6eef8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .wrap{width:100%;max-width:980px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:12px;padding:20px;box-shadow:0 8px 30px rgba(2,6,23,0.7)}
+    h1{margin:0 0 10px;font-size:20px}
+    p.lead{margin:0 0 18px;color:var(--muted)}
+    .students{display:flex;gap:10px;margin-bottom:16px}
+    .student{flex:1;padding:10px;border-radius:8px;background:rgba(255,255,255,0.02);text-align:center;cursor:pointer;user-select:none}
+    .student.selected{outline:2px solid var(--accent);transform:translateY(-3px)}
+    .controls{display:flex;gap:10px;align-items:center;margin-bottom:18px}
+    button{background:var(--accent);color:#04253b;border:0;padding:10px 14px;border-radius:8px;cursor:pointer}
+    button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(96,165,250,0.18)}
+    .timer{margin-left:auto;color:var(--muted);font-weight:600}
+    .question-area{margin-top:14px}
+    .q{padding:14px;border-radius:10px;background:rgba(255,255,255,0.01);margin-bottom:10px}
+    .q h3{margin:0 0 8px;font-size:15px}
+    .choices{display:flex;flex-wrap:wrap;gap:8px}
+    .choice{padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.02);cursor:pointer}
+    .choice.selected{outline:2px solid rgba(96,165,250,0.6)}
+    .report{margin-top:16px;padding:12px;border-radius:10px;background:linear-gradient(180deg,rgba(16,185,129,0.06),rgba(255,255,255,0.01));color:#dffafa}
+    .report h2{margin:0 0 8px}
+    .incorrect{color:var(--danger)}
+    .correct{color:var(--success)}
+    .small{font-size:13px;color:var(--muted)}
+    textarea{width:100%;min-height:120px}
+    .footer-note{margin-top:10px;color:var(--muted);font-size:13px}
+    @media (max-width:640px){.students{flex-direction:column}}
+  </style>
+</head>
+<body>
+  <div class="wrap card">
+    <h1>English Quiz — Pre‑Intermediate</h1>
+    <p class="lead">Topics: Present Simple, adverbs of frequency, question forms. 20 minutes. Choose a name then click "Start test".</p>
+
+    <div class="students" id="students"></div>
+
+    <div class="controls">
+      <button id="startBtn">Start test</button>
+      <button id="finishBtn" class="ghost" disabled>Finish early</button>
+      <div class="timer" id="timer">20:00</div>
+    </div>
+
+    <div id="quiz" class="question-area"></div>
+
+    <div id="report" class="report" style="display:none"></div>
+
+    <div class="footer-note">After completion, answers will be sent to the teacher via Telegram bot configured in <code>config.json</code>.</div>
+  </div>
+
+<script>
+// Load configuration from config.json (must be placed in same repo)
+let CONFIG = {bot_token: null, chat_id: null};
+fetch('./config.json').then(r=>r.json()).then(j=>{CONFIG=j}).catch(()=>{console.warn('config.json not found or unreadable. Submissions will fail until config is provided.');});
+
+const students = ["Hikmatullo","Mahliyo","Madinaxon","Maftuna"];
+const studentsEl = document.getElementById('students');
+let selectedStudent = null;
+students.forEach(name=>{
+  const el = document.createElement('div'); el.className='student'; el.textContent=name;
+  el.addEventListener('click',()=>{
+    document.querySelectorAll('.student').forEach(s=>s.classList.remove('selected'));
+    el.classList.add('selected'); selectedStudent = name;
+  });
+  studentsEl.appendChild(el);
+});
+
+// Questions: 10 True/False, 15 MCQ, 10 Short-answer
+// All questions use simple pre-intermediate grammar.
+const questions = [];
+let qid = 1;
+
+// 10 True/False (type: 'tf')
+const tf = [
+  {q:"She doesn't go to school on Sundays.", a:false, explain:"Present simple negative — usually: 'She doesn't go to school on Sundays' means she does not attend."},
+  {q:"I always brush my teeth before bed.", a:true},
+  {q:"They is at home now.", a:false},
+  {q:"He often plays football after school.", a:true},
+  {q:"We doesn't like coffee.", a:false},
+  {q:"Do you speak English?" , a:true},
+  {q:"My father go to work by bus.", a:false},
+  {q:"She rarely eats fast food.", a:true},
+  {q:"He study every day.", a:false},
+  {q:"They sometimes visit their grandparents.", a:true}
+];
+for (const t of tf){questions.push({id:qid++, type:'tf', question:t.q, answer:t.a})}
+
+// 15 MCQ (type: 'mcq')
+const mcqList = [
+  {q:"Choose the correct question for this answer: 'Yes, I do.'", choices:["Do you like apples?","You like apples?","Are you like apples?","Do you likes apples?"], answer:0},
+  {q:"Which sentence is correct?", choices:["She don't work on Sundays.","She doesn't work on Sundays.","She not works on Sundays.","She isn't working on Sundays."], answer:1},
+  {q:"Choose the correct adverb of frequency to complete: 'He _____ goes to the gym.'", choices:["always","sometimes","never","yesterday"], answer:0},
+  {q:"Which question is in the Present Simple?", choices:["What are you doing?","What did you do?","What do you do?","What will you do?"], answer:2},
+  {q:"Select the correct negative form:", choices:["I no like it.","I don't like it.","I doesn't like it.","I not like it."], answer:1},
+  {q:"Choose the correct sentence:", choices:["They watches TV every evening.","They watch TV every evening.","They watching TV every evening.","They are watch TV every evening."], answer:1},
+  {q:"Fill: '_____ she play tennis?' (question form)", choices:["Do","Does","Is","Are"], answer:1},
+  {q:"Which adverb means 'not often'?", choices:["always","usually","rarely","everyday"], answer:2},
+  {q:"Choose correct: 'I _____ to school by bike.'", choices:["go","goes","going","went"], answer:0},
+  {q:"Which is a frequency expression?", choices:["in the morning","on Monday","every week","yesterday"], answer:2},
+  {q:"Question form for: 'They live in Tashkent.'", choices:["Do they live in Tashkent?","Are they live in Tashkent?","They do live in Tashkent?","Does they live in Tashkent?"], answer:0},
+  {q:"Choose correct: 'He _____ early.'", choices:["get up","gets up","getting up","got up"], answer:1},
+  {q:"Which is correct frequency order?", choices:["never, sometimes, always","always, sometimes, never","sometimes, always, never","never, always, sometimes"], answer:1},
+  {q:"Which question asks about habit?", choices:["What are you doing today?","How often do you exercise?","Did you go?","Will you come?"], answer:1},
+  {q:"Choose the correct short answer for: 'Do you have a pen?'", choices:["Yes, I have.","Yes, I do.","Yes, I have one.","Yes, I am."], answer:2}
+];
+for (const m of mcqList){questions.push({id:qid++, type:'mcq', question:m.q, choices:m.choices, answer:m.answer})}
+
+// 10 Short-answer (type: 'sa') — vocabulary / sentence completion. We'll provide acceptable answers array.
+const sa = [
+  {q:"Write the correct form: 'He _____ (go) to school every day.'", answers:["goes"]},
+  {q:"Make a question: '______ you like tea?' (use Do/Does)", answers:["do you","do you?"]},
+  {q:"Fill with adverb: 'She is _____ late.' (not often)", answers:["rarely","seldom"]},
+  {q:"Correct verb: 'They _____ (not / watch) TV at night.'", answers:["don't watch","do not watch"]},
+  {q:"Question form: '_____ he play football?' (use Does)", answers:["does he","does he?"]},
+  {q:"Fill: 'I _____ (have) two sisters.'", answers:["have"]},
+  {q:"Choose frequency word: 'I see him _____ (every month).'", answers:["monthly","every month","once a month"]},
+  {q:"Complete: 'Where _____ she live?'", answers:["does","does she","does she?"]},
+  {q:"Write negative: 'She (not / like) coffee.'", answers:["doesn't like","does not like"]},
+  {q:"Form question: 'You are from Uzbekistan.' -> Make a question.", answers:["are you from uzbekistan","are you from uzbekistan?","are you from Uzbekistan","are you from Uzbekistan?"]}
+];
+for (const s of sa){questions.push({id:qid++, type:'sa', question:s.q, answers:s.answers})}
+
+// Shuffle questions slightly while preserving distribution? We keep order: tf, mcq, sa (as requested counts). Total = 35
+
+// UI rendering and logic
+const quizEl = document.getElementById('quiz');
+const startBtn = document.getElementById('startBtn');
+const finishBtn = document.getElementById('finishBtn');
+const timerEl = document.getElementById('timer');
+const reportEl = document.getElementById('report');
+
+let answers = {}; // id -> user's answer
+let timer = null; let remaining = 20*60; let started=false; let startTime = null;
+
+function renderQuestions(){
+  quizEl.innerHTML='';
+  for (const q of questions){
+    const card = document.createElement('div'); card.className='q';
+    const h = document.createElement('h3'); h.textContent=`Q${q.id}. ${q.question}`; card.appendChild(h);
+    if (q.type === 'tf'){
+      const ch = document.createElement('div'); ch.className='choices';
+      ['True','False'].forEach((opt,idx)=>{
+        const c = document.createElement('div'); c.className='choice'; c.textContent=opt;
+        c.addEventListener('click',()=>{ answers[q.id]= (idx===0); updateSelection(card, idx); });
+        ch.appendChild(c);
+      });
+      card.appendChild(ch);
+    } else if (q.type === 'mcq'){
+      const ch = document.createElement('div'); ch.className='choices';
+      q.choices.forEach((opt,idx)=>{ const c=document.createElement('div'); c.className='choice'; c.textContent=opt; c.addEventListener('click',()=>{ answers[q.id]=idx; updateSelection(card, idx); }); ch.appendChild(c); });
+      card.appendChild(ch);
+    } else if (q.type === 'sa'){
+      const inp = document.createElement('input'); inp.type='text'; inp.placeholder='Type your answer here'; inp.style.width='100%'; inp.addEventListener('input',()=>{ answers[q.id]=inp.value.trim(); });
+      card.appendChild(inp);
+    }
+    quizEl.appendChild(card);
+  }
+}
+
+function updateSelection(card, choiceIndex){
+  const chs = card.querySelectorAll('.choice');
+  chs.forEach((c,i)=>{ c.classList.toggle('selected', i===choiceIndex); });
+}
+
+function startTest(){
+  if (!selectedStudent){ alert('Please select a student name before starting.'); return; }
+  started = true; startTime = Date.now(); remaining = 20*60; answers = {};
+  renderQuestions();
+  startBtn.disabled=true; finishBtn.disabled=false; document.querySelectorAll('.student').forEach(s=>s.remove());
+  tick(); timer = setInterval(tick,1000);
+}
+
+function tick(){
+  if (remaining<=0){ finishTest(); return; }
+  const m = Math.floor(remaining/60); const s = remaining%60; timerEl.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  remaining--;
+}
+
+function finishTest(){
+  if (!started) return;
+  started=false; clearInterval(timer); startBtn.disabled=false; finishBtn.disabled=true; timerEl.textContent='00:00';
+  const endTime = Date.now(); const used = Math.round((endTime - startTime)/1000);
+  const result = grade(answers);
+  showReport(result, used);
+  sendToTelegram(result, used).catch(err=>{ console.error('Send failed',err); });
+}
+
+function grade(answers){
+  let correct=0, incorrect=0; const wrongs=[];
+  for (const q of questions){
+    const id=q.id; const user = answers[id];
+    if (q.type==='tf'){
+      const ok = (typeof user==='boolean') && (user===q.answer);
+      if(ok) correct++; else { incorrect++; wrongs.push({id, question:q.question, your: user===undefined?null:(user?"True":"False"), correct: q.answer?"True":"False"}); }
+    } else if (q.type==='mcq'){
+      const ok = (typeof user==='number') && (user===q.answer);
+      if(ok) correct++; else { incorrect++; wrongs.push({id, question:q.question, your: user===undefined?null:(user===null?null:q.choices[user]), correct: q.choices[q.answer]}); }
+    } else if (q.type==='sa'){
+      const got = (user||'').toString().trim().toLowerCase();
+      const ok = q.answers.some(a=>a.toLowerCase().replace(/[?\s]+$/,'')===got.replace(/[?\s]+$/,''));
+      if(ok) correct++; else { incorrect++; wrongs.push({id, question:q.question, your: user||null, correct: q.answers.join(' / ')}); }
+    }
+  }
+  return {student:selectedStudent, correct, incorrect, wrongs, total:questions.length};
+}
+
+function showReport(result, usedSeconds){
+  reportEl.style.display='block';
+  const minutes = Math.floor(usedSeconds/60); const seconds = usedSeconds%60;
+  reportEl.innerHTML = `
+    <h2>Result for ${escapeHtml(result.student)}</h2>
+    <div class="small">Time used: ${minutes}m ${seconds}s</div>
+    <p><strong class="correct">Correct: ${result.correct}</strong> — <strong class="incorrect">Incorrect: ${result.incorrect}</strong> (out of ${result.total})</p>
+  `;
+  if (result.wrongs.length){
+    const list = document.createElement('div');
+    list.innerHTML = '<h3 style="margin-top:8px">Incorrect questions</h3>';
+    result.wrongs.forEach(w=>{
+      const d = document.createElement('div'); d.style.marginBottom='8px';
+      d.innerHTML = `<div class=small>Q${w.id}: ${escapeHtml(w.question)}</div><div>Your answer: <strong class='incorrect'>${escapeHtml(w.your===null||w.your===undefined?"(no answer)":w.your)}</strong></div><div>Correct answer: <strong class='correct'>${escapeHtml(w.correct)}</strong></div>`;
+      list.appendChild(d);
+    });
+    reportEl.appendChild(list);
+  } else {
+    reportEl.innerHTML += '<p class="small">All answers are correct. Well done.</p>';
+  }
+}
+
+async function sendToTelegram(result, usedSeconds){
+  const teacherText = buildReportText(result, usedSeconds);
+  if (!CONFIG || !CONFIG.bot_token || !CONFIG.chat_id){ console.warn('Missing bot token or chat id in config.json.'); return Promise.reject(new Error('Missing config')); }
+  const url = `https://api.telegram.org/bot${encodeURIComponent(CONFIG.bot_token)}/sendMessage`;
+  const payload = { chat_id: CONFIG.chat_id, text: teacherText, parse_mode: 'HTML' };
+  const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  if (!res.ok) throw new Error('Telegram API returned status '+res.status);
+  return res.json();
+}
+
+function buildReportText(result, usedSeconds){
+  const minutes = Math.floor(usedSeconds/60); const seconds = usedSeconds%60;
+  let txt = `<b>Quiz result</b>\nStudent: ${escapeHtml(result.student)}\nTime used: ${minutes}m ${seconds}s\nCorrect: ${result.correct}\nIncorrect: ${result.incorrect}\nTotal: ${result.total}`;
+  if (result.wrongs.length){ txt += '\n\nIncorrect questions:\n'; result.wrongs.forEach(w=>{ txt += `Q${w.id}: ${stripTags(w.question)}\nYour: ${w.your===null||w.your===undefined? '(no answer)': stripTags(w.your.toString())} \nCorrect: ${stripTags(w.correct)}\n\n`; }); }
+  return txt;
+}
+
+// Helpers
+function escapeHtml(s){ if (s===null||s===undefined) return ''; return String(s).replace(/[&<>\"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]}); }
+function stripTags(s){ return String(s).replace(/<[^>]*>/g,''); }
+
+startBtn.addEventListener('click', ()=>{
+  if (!selectedStudent){ alert('Choose a name first.'); return; }
+  startTest();
+});
+finishBtn.addEventListener('click', ()=>{ if (confirm('Finish the test now?')) finishTest(); });
+
+// Prevent accidental navigation while test running
+window.addEventListener('beforeunload', (e)=>{ if (started){ e.preventDefault(); e.returnValue = ''; } });
+
+</script>
+</body>
+</html>
